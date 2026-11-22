@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Hits no Tempo</title>
+  <meta name="theme-color" content="#120c26">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Hits no Tempo">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ============ TELA: JOGAR ============ -->
+  <main id="view-play" class="view active">
+    <header class="top">
+      <h1>Hits no Tempo</h1>
+      <button id="device-chip" class="chip" type="button">🔈 <span id="device-name">sem dispositivo</span></button>
+    </header>
+
+    <section id="play-login" class="card-box hidden">
+      <p>Entre com o Spotify para tocar as músicas das cartas.</p>
+      <button class="btn primary" data-action="login">Entrar com Spotify</button>
+    </section>
+
+    <section id="play-config" class="card-box hidden">
+      <p>Falta configurar o <b>Client ID</b> do Spotify.</p>
+      <button class="btn primary" data-goto="settings">Ir para Ajustes</button>
+    </section>
+
+    <section id="play-idle" class="stage hidden">
+      <div class="disc idle"><div class="hole"></div></div>
+      <button id="btn-scan" class="btn primary big">📷 Escanear carta</button>
+      <p class="hint">Aponte a câmera para o QR code da carta.</p>
+    </section>
+
+    <section id="play-playing" class="stage hidden">
+      <div class="disc spinning" id="disc"><div class="hole"></div></div>
+      <p id="play-status" class="status">Tocando…</p>
+      <div class="controls">
+        <button class="btn round" id="btn-restart" title="Recomeçar">⏮</button>
+        <button class="btn round big-round" id="btn-toggle" title="Pausar">⏸</button>
+        <button class="btn round" id="btn-fwd" title="Avançar 15s">+15</button>
+      </div>
+      <button id="btn-next" class="btn primary big">📷 Próxima carta</button>
+    </section>
+  </main>
+
+  <!-- ============ TELA: CARTAS ============ -->
+  <main id="view-cards" class="view">
+    <header class="top"><h1>Cartas</h1><span class="chip" id="deck-count">0 músicas</span></header>
+
+    <section class="card-box">
+      <h2>1. Adicionar músicas</h2>
+      <label class="lbl">Link de uma playlist sua no Spotify</label>
+      <div class="row">
+        <input id="in-playlist" type="url" placeholder="https://open.spotify.com/playlist/…">
+        <button class="btn" id="btn-import-pl">Importar</button>
+      </div>
+      <label class="lbl">…ou um CSV do Exportify</label>
+      <input id="in-csv" type="file" accept=".csv,text/csv">
+      <label class="lbl">…ou uma música avulsa (link da faixa)</label>
+      <div class="row">
+        <input id="in-track" type="url" placeholder="https://open.spotify.com/track/…">
+        <button class="btn" id="btn-add-track">Adicionar</button>
+      </div>
+      <p id="import-msg" class="msg"></p>
+    </section>
+
+    <section class="card-box">
+      <h2>2. Conferir os anos</h2>
+      <p class="hint">O Spotify costuma trazer o ano de remasterizações e coletâneas. As linhas com ⚠ merecem atenção.
+        O botão abaixo busca o ano de lançamento original no MusicBrainz (leva ~1 s por música).</p>
+      <div class="row wrap">
+        <button class="btn" id="btn-mb-flagged">🔎 Sugerir anos (só ⚠)</button>
+        <button class="btn" id="btn-mb-all">🔎 Sugerir anos (todas)</button>
+        <button class="btn ghost" id="btn-mb-stop" hidden>Parar</button>
+      </div>
+      <p id="mb-msg" class="msg"></p>
+      <div class="table-wrap">
+        <table id="deck-table">
+          <thead><tr><th>Ano</th><th>Música / Artista</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row wrap">
+        <button class="btn ghost" id="btn-export">💾 Backup (.json)</button>
+        <label class="btn ghost file-btn">📂 Restaurar<input id="in-json" type="file" accept=".json,application/json"></label>
+        <button class="btn ghost danger" id="btn-clear">🗑 Limpar tudo</button>
+      </div>
+    </section>
+
+    <section class="card-box">
+      <h2>3. Imprimir</h2>
+      <label class="lbl">Tamanho da carta</label>
+      <select id="sel-size">
+        <option value="65">6,5 cm (igual ao original, 12 por folha)</option>
+        <option value="80">8 cm (6 por folha)</option>
+      </select>
+      <label class="lbl">Estilo do verso</label>
+      <select id="sel-style">
+        <option value="neon">Colorido</option>
+        <option value="bw">Preto e branco (economiza tinta)</option>
+      </select>
+      <label class="check"><input type="checkbox" id="chk-mirror" checked> Espelhar o verso (impressão frente e verso, virando pela borda longa)</label>
+      <button class="btn primary big" id="btn-print">🖨 Gerar folhas para imprimir</button>
+      <p class="hint">No diálogo de impressão: papel A4, escala 100% (sem “ajustar à página”) e margens “nenhuma”. Para salvar em PDF, escolha “Salvar como PDF”.</p>
+    </section>
+  </main>
+
+  <!-- ============ TELA: AJUSTES ============ -->
+  <main id="view-settings" class="view">
+    <header class="top"><h1>Ajustes</h1></header>
+
+    <section class="card-box">
+      <h2>Spotify</h2>
+      <label class="lbl">Client ID (do painel developer.spotify.com)</label>
+      <div class="row">
+        <input id="in-client" type="text" autocomplete="off" spellcheck="false" placeholder="ex.: 1a2b3c…">
+        <button class="btn" id="btn-save-client">Salvar</button>
+      </div>
+      <label class="lbl">Redirect URI — cadastre exatamente este endereço no painel:</label>
+      <div class="row">
+        <code id="redirect-uri" class="code"></code>
+        <button class="btn ghost" id="btn-copy-uri">Copiar</button>
+      </div>
+      <p id="acct" class="msg"></p>
+      <div class="row wrap">
+        <button class="btn primary" data-action="login" id="btn-login">Entrar com Spotify</button>
+        <button class="btn ghost" id="btn-logout">Sair</button>
+      </div>
+    </section>
+
+    <section class="card-box">
+      <h2>Onde tocar</h2>
+      <p class="hint">Abra o app do Spotify neste celular (ou em uma caixa de som / PC) e toque em atualizar.</p>
+      <div class="row">
+        <select id="sel-device"><option value="">Automático</option></select>
+        <button class="btn" id="btn-refresh-dev">Atualizar</button>
+      </div>
+    </section>
+
+    <section class="card-box">
+      <h2>Jogo</h2>
+      <label class="check"><input type="checkbox" id="chk-random"> Começar a música em um ponto aleatório (mais difícil)</label>
+      <label class="check"><input type="checkbox" id="chk-vibrate" checked> Vibrar ao ler a carta</label>
+    </section>
+
+    <p class="hint center">Hits no Tempo · feito pelo Bruno</p>
+  </main>
+
+  <!-- ============ SCANNER ============ -->
+  <div id="scanner" class="overlay hidden">
+    <video id="video" playsinline muted></video>
+    <canvas id="scan-canvas" hidden></canvas>
+    <div class="frame"></div>
+    <p class="scan-hint" id="scan-hint">Procurando QR code…</p>
+    <button class="btn big" id="btn-scan-cancel">Cancelar</button>
+  </div>
+
+  <!-- ============ AVISO / MODAL ============ -->
+  <div id="modal" class="overlay dim hidden">
+    <div class="modal-box">
+      <p id="modal-text"></p>
+      <div class="row wrap center" id="modal-actions"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- ============ ÁREA DE IMPRESSÃO ============ -->
+  <div id="print-area"></div>
+
+  <nav class="tabs">
+    <button data-goto="play" class="active">🎵<span>Jogar</span></button>
+    <button data-goto="cards">🃏<span>Cartas</span></button>
+    <button data-goto="settings">⚙️<span>Ajustes</span></button>
+  </nav>
+
+  <script src="vendor/jsQR.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="js/spotify.js"></script>
+  <script src="js/scanner.js"></script>
+  <script src="js/deck.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
