@@ -1,5 +1,5 @@
 /* Service worker: deixa o app abrir rápido e funcionar sem internet (menos o Spotify, claro). */
-const VERSION = 'hnt-v12';
+const VERSION = 'hnt-v13';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/spotify.js', 'js/scanner.js', 'js/deck.js',

@@ -91,7 +91,9 @@
     try {
       const list = await Spotify.devices();
       const chosen = pickDevice(list);
-      $('#device-name').textContent = chosen ? chosen.name : 'abra o Spotify';
+      const last = lastDevice();
+      $('#device-name').textContent = chosen ? chosen.name
+        : last ? `${last.name} (abra o Spotify)` : 'abra o Spotify';
       return list;
     } catch (e) {
       $('#device-name').textContent = e.code === 'NO_LOGIN' ? 'desconectado' : 'sem conexão';
@@ -99,19 +101,38 @@
     }
   }
 
-  // Escolha automática: o Spotify ativo > um celular > o primeiro da lista.
+  // Último aparelho onde o jogo tocou (para não "pular" para outro sozinho).
+  const LAST_DEV = 'hnt.lastDevice';
+  const lastDevice = () => { try { return JSON.parse(localStorage.getItem(LAST_DEV)); } catch { return null; } };
+  const rememberDevice = (d) => localStorage.setItem(LAST_DEV, JSON.stringify({ id: d.id, name: d.name, type: d.type }));
+
+  // Escolha automática: o aparelho ativo no Spotify > o último usado > um celular.
+  // NUNCA escolhe sozinho uma caixa de som / TV / PC parado: no iPhone, o Spotify "adormece" em
+  // segundo plano e some da lista; antes o app caía no primeiro da lista (uma Alexa, por exemplo).
   function pickDevice(list) {
+    const last = lastDevice();
     return list.find((d) => d.is_active)
+      || (last && list.find((d) => d.id === last.id))
       || list.find((d) => d.type === 'Smartphone')
-      || list[0] || null;
+      || null;
   }
 
-  async function noDeviceDialog() {
-    const r = await modal(
-      'Não encontrei nenhum Spotify aberto.\n\n1. Abra o app do Spotify neste celular\n2. Dê play em qualquer música por um segundo\n3. Volte para cá e toque em "Tentar de novo"',
-      [{ label: 'Abrir Spotify', primary: true, value: 'open' }, { label: 'Tentar de novo', value: 'retry' }, { label: 'Cancelar', value: 'cancel' }],
-    );
+  /** Aviso quando o celular não aparece no Spotify. Retorna 'wait' | 'retry' | 'cancel' | { device }. */
+  async function noDeviceDialog(list = []) {
+    const last = lastDevice();
+    const text = last && last.type === 'Smartphone'
+      ? `O Spotify do ${last.name} não está respondendo.\n\nO celular "adormece" o Spotify quando ele fica em segundo plano. `
+        + 'Toque em "Abrir Spotify", dê play em qualquer música por um segundo e volte para cá.'
+      : 'Não encontrei o Spotify deste celular.\n\n1. Abra o app do Spotify\n2. Dê play em qualquer música por um segundo\n3. Volte para cá e toque em "Tentar de novo"';
+    const others = list.slice(0, 3).map((d) => ({ label: `Tocar em ${d.name}`, value: 'dev:' + d.id }));
+    const r = await modal(text, [
+      { label: 'Abrir Spotify', primary: true, value: 'open' },
+      { label: 'Tentar de novo', value: 'retry' },
+      ...others,
+      { label: 'Cancelar', value: 'cancel' },
+    ]);
     if (r === 'open') { location.href = 'spotify:'; return 'wait'; }
+    if (typeof r === 'string' && r.startsWith('dev:')) return { device: list.find((d) => d.id === r.slice(4)) };
     return r;
   }
 
@@ -121,14 +142,17 @@
     $('#play-status').textContent = 'Carregando…';
     $('#disc').classList.add('paused');
 
+    let chosen = null; // aparelho escolhido à mão no aviso ("Tocar em …")
     for (let attempt = 0; attempt < 4; attempt++) {
+      let list = [];
       try {
-        const list = await Spotify.devices();
-        const dev = pickDevice(list);
+        list = await Spotify.devices();
+        let dev = (chosen && list.find((d) => d.id === chosen.id)) || pickDevice(list);
         if (!dev) {
-          const r = await noDeviceDialog();
+          const r = await noDeviceDialog(list);
           if (r === 'cancel') return resetGame();
-          if (r === 'wait') { await waitForReturn(); }
+          if (r === 'wait') await waitForReturn();
+          if (r && r.device) chosen = r.device;
           continue;
         }
         game.deviceId = dev.id;
@@ -151,15 +175,18 @@
         }
         game.startMs = start;
         await Spotify.play(id, dev.id, start);
+        rememberDevice(dev);
         Spotify.repeatOff(dev.id);
         setPlaying(true);
         return;
       } catch (e) {
         if (e.code === 'NO_LOGIN') { resetGame(); return modal(e.message); }
         if (e.status === 404) { // dispositivo dormiu / não está ativo
-          const r = await noDeviceDialog();
+          chosen = null;
+          const r = await noDeviceDialog(list.filter((d) => d.id !== game.deviceId));
           if (r === 'cancel') return resetGame();
           if (r === 'wait') await waitForReturn();
+          if (r && r.device) chosen = r.device;
           continue;
         }
         if (e.status === 403) {
@@ -210,8 +237,8 @@
   // ---------- scanner ----------
   async function openScanner() {
     if (!Spotify.isLoggedIn()) return modal('Entre com o Spotify primeiro.');
-    // pausa a música anterior para ninguém ouvir o começo da próxima por engano
-    if (game.playing) { Spotify.pause(game.deviceId).catch(() => {}); setPlaying(false); }
+    // NÃO pausa a música anterior: no iPhone, o Spotify pausado em segundo plano "adormece" e some
+    // da lista de aparelhos. Tocando, ele continua acordado e a próxima música entra no lugar.
     $('#scanner').classList.remove('hidden');
     $('#scan-hint').textContent = 'Procurando QR code…';
     try {
