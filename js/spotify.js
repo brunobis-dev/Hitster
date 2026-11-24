@@ -151,6 +151,10 @@ const Spotify = (() => {
   // ---------- Catálogo ----------
   const me = () => api('/me');
   const track = (id) => api('/tracks/' + id);
+  /** Busca faixas. market=from_token traz só o que toca na conta do usuário (no Brasil, catálogo BR).
+   *  limit 10: desde fev/2026 o Development Mode não aceita mais que isso na busca. */
+  const search = async (q, limit = 10) =>
+    ((await api('/search', { query: { q, type: 'track', limit, market: 'from_token' } })).tracks || {}).items || [];
 
   /** Itens de uma playlist sua. Tenta o endpoint novo (/items) e cai para o antigo (/tracks). */
   async function playlistTracks(playlistId, onProgress) {
@@ -180,6 +184,6 @@ const Spotify = (() => {
 
   return {
     redirectUri, getClientId, setClientId, login, handleRedirect, isLoggedIn, logout,
-    devices, play, resume, pause, seek, state, repeatOff, me, track, playlistTracks,
+    devices, play, resume, pause, seek, state, repeatOff, me, track, search, playlistTracks,
   };
 })();

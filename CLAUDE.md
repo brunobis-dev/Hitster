@@ -39,7 +39,8 @@ Os scripts são carregados em ordem no fim do `index.html` (vendor → spotify �
 | `hnt.pkceVerifier`, `hnt.pkceState` | temporários durante o login |
 | `hnt.randomStart`, `hnt.vibrate` | `'1'`/`'0'` |
 | `hnt.excerptPos` | início do trecho (fração 0–0,74 da faixa) ou `'random'`; só vale com `hnt.randomStart = '1'` (modo Trecho) |
-| `hnt.deck` | array de cartas `{id, title, artist, album, year, spotifyYear, flag, checked?, sug}` |
+| `hnt.deck` | array de cartas `{id, title, artist, album, year, spotifyYear, flag, checked?, sug}`; as vindas do "Importar lista" têm também `listN, origin, genre` |
+| `hnt.listPending` | linhas da lista que não viraram carta sozinhas: `{item, cand, note?}` (seção "Para conferir" na tela Cartas) |
 
 ## Formato do QR
 
@@ -98,9 +99,14 @@ Para testar no celular é preciso https: GitHub Pages, ou um túnel (`npx localt
 - Mudou JS/CSS e nada muda no celular → service worker com cache antigo: aumentar `VERSION` em `sw.js` (ex.: `hnt-v2`) ou limpar dados do site.
 - Botões sem reação → erro de JS antes do `app.js` terminar; ver o console.
 
-## Próximas funcionalidades planejadas
+## Importar lista (tela Cartas)
 
-- **"Importar lista"**: ler `lista-300-musicas.csv` (colunas `n,ano,artista,musica,origem,genero,conferir_ano`), buscar cada música via `GET /search?type=track&q=track:… artist:…`, escolher o melhor resultado e criar as cartas usando o **ano da lista** (não o do Spotify). Mostrar as não encontradas para correção manual. Respeitar rate limit (429 + `Retry-After`).
+- Lê um CSV com `ano`, `artista`, `musica` (opcionais: `n`, `origem`, `genero`, `conferir_ano`). Aceita `,` ou `;` e UTF-8 ou Windows-1252 (Excel BR).
+- Para cada linha: `GET /search?type=track&market=from_token&limit=10` com `track:… artist:…` e, se precisar, texto livre. `limit` 10 porque é o máximo no Development Mode desde fev/2026.
+- `Deck.bestMatch()` dá nota 0–1 (semelhança de título + artista; ao vivo/remix/cover/karaokê perdem pontos). ≥ 0,78 vira carta; entre 0,5 e 0,78 vai para "Para conferir" com sugestão; abaixo disso, "não encontrei".
+- A carta usa **ano, artista e título da lista**; do Spotify só o ID (o que vai no QR). `conferir_ano` = sim/x/1 → carta com ⚠.
+- Reimportar a mesma lista pula o que já virou carta (pelo `n` ou artista+título) e procura de novo só as pendentes.
+- Testado apenas com a busca do Spotify simulada (catálogo falso); com a API real ainda não.
 - Receitas em JSON (`receita-*.json`) descrevem a distribuição de décadas/gêneros/origem da lista — usadas só para gerar listas novas, não pelo app.
 
 ## Convenções

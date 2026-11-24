@@ -335,6 +335,165 @@
     } catch (err) { msg(el, 'Erro: ' + err.message, true); }
   };
 
+  // ---------- Importar lista (CSV com ano / artista / música) ----------
+  const PENDING_KEY = 'hnt.listPending';
+  const ACCEPT = 0.78;  // nota mínima para criar a carta sozinho
+  const MAYBE = 0.5;    // abaixo disso nem sugere a faixa encontrada
+  let pending = [];
+  try { pending = JSON.parse(localStorage.getItem(PENDING_KEY)) || []; } catch { pending = []; }
+  const savePending = () => localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  let listStop = false;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const escH = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /** Lê o arquivo como UTF-8; se não for (Excel às vezes salva em Windows-1252), tenta de novo. */
+  async function readText(file) {
+    const buf = await file.arrayBuffer();
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch { return new TextDecoder('windows-1252').decode(buf); }
+  }
+
+  async function searchRetry(q) {
+    for (let i = 0; ; i++) {
+      try { return await Spotify.search(q); }
+      catch (e) {
+        if (e.status === 429 && i < 4) { await wait(5000 * (i + 1)); continue; } // limite de pedidos: espera e tenta de novo
+        throw e;
+      }
+    }
+  }
+
+  /** Busca primeiro com filtros (track:/artist:) e, se não achar algo bom, com texto livre. */
+  async function searchItem(item) {
+    const clean = (s) => s.replace(/["'`]/g, ' ').replace(/\s+/g, ' ').trim();
+    const mainArtist = item.artist.split(/\s*(?:,|&|\bfeat\.?|\bft\.?)\s*/i)[0];
+    const queries = [
+      `track:${clean(item.title)} artist:${clean(mainArtist)}`,
+      `${clean(item.title)} ${clean(mainArtist)}`,
+    ];
+    let best = null;
+    for (const q of queries) {
+      const b = Deck.bestMatch(item, await searchRetry(q));
+      if (b && (!best || b.score > best.score)) best = b;
+      if (best && best.score >= ACCEPT) break;
+    }
+    return best;
+  }
+  const slim = (b) => ({
+    id: b.track.id,
+    name: b.track.name,
+    artists: (b.track.artists || []).map((a) => a.name).join(', '),
+    album: (b.track.album && b.track.album.name) || '',
+    date: (b.track.album && b.track.album.release_date) || '',
+    score: Math.round(b.score * 100),
+  });
+
+  $('#in-list').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    const el = $('#list-msg');
+    if (!Spotify.isLoggedIn()) return msg(el, 'Entre com o Spotify em Configurações primeiro.', true);
+    let items;
+    try { items = Deck.parseList(await readText(f)); }
+    catch (err) { return msg(el, err.message, true); }
+
+    // pula o que já virou carta; o que estava pendente dessa lista é procurado de novo
+    const todo = items.filter((it) => !Deck.hasListItem(it));
+    const todoN = new Set(todo.map((it) => it.n));
+    pending = pending.filter((p) => !todoN.has(p.item.n));
+    savePending(); renderPending();
+    if (!todo.length) return msg(el, `Todas as ${items.length} músicas dessa lista já estão no baralho.`);
+
+    listStop = false;
+    const bar = $('#list-progress');
+    bar.hidden = false; $('#btn-list-stop').hidden = false; $('#in-list').disabled = true;
+    let added = 0, i = 0, failed = false;
+    for (const it of todo) {
+      if (listStop) break;
+      i++;
+      bar.firstElementChild.style.width = (i / todo.length) * 100 + '%';
+      msg(el, `Procurando ${i}/${todo.length}: ${it.artist} — ${it.title}`);
+      try {
+        const best = await searchItem(it);
+        if (best && best.score >= ACCEPT) {
+          if (Deck.addMany([Deck.fromListItem(it, best.track)])) added++;
+          else pending.push({ item: it, cand: slim(best), note: 'Essa faixa já está no baralho (música repetida na lista?).' });
+        } else {
+          pending.push({ item: it, cand: best && best.score >= MAYBE ? slim(best) : null });
+        }
+      } catch (err) {
+        if (err.code === 'NO_LOGIN' || err.status === 403) { msg(el, 'Parei: ' + err.message, true); failed = true; break; }
+        pending.push({ item: it, cand: null, note: 'Erro na busca: ' + err.message });
+      }
+      savePending(); renderPending();
+      if (i % 10 === 0) renderTable();
+      await wait(120); // devagar para não estourar o limite de pedidos do Spotify
+    }
+    bar.hidden = true; $('#btn-list-stop').hidden = true; $('#in-list').disabled = false;
+    renderTable(); renderPending();
+    if (!failed) {
+      msg(el, `${listStop ? 'Parado. ' : ''}${added} cartas criadas` +
+        (pending.length ? ` · ${pending.length} para conferir abaixo.` : ' · nenhuma pendência 🎉'));
+    }
+  };
+  $('#btn-list-stop').onclick = () => { listStop = true; };
+
+  /** Lista das músicas que não entraram sozinhas, com as opções de correção. */
+  function renderPending() {
+    const box = $('#list-pending');
+    if (!pending.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<h3 class="pend-title">Para conferir (${pending.length})</h3>` + pending.map((p, idx) => {
+      const it = p.item;
+      const q = encodeURIComponent(`${it.title} ${it.artist}`);
+      const cand = p.cand
+        ? `<div class="pend-cand">Achei: <b>${escH(p.cand.name)}</b> — ${escH(p.cand.artists)}
+             <span class="alb">${escH(p.cand.album)}${p.cand.date ? ' · ' + escH(p.cand.date.slice(0, 4)) : ''} · ${p.cand.score}% parecido</span>
+             <button class="btn" data-pend-accept="${idx}" type="button">Usar esta</button></div>`
+        : `<div class="pend-cand none">Não encontrei no Spotify.</div>`;
+      return `<div class="pend">
+        <div class="pend-head"><span class="pend-n">#${escH(it.n)}</span> <b>${escH(it.year || '?')}</b> · ${escH(it.artist)} — <i>${escH(it.title)}</i></div>
+        ${p.note ? `<div class="pend-note">${escH(p.note)}</div>` : ''}
+        ${cand}
+        <div class="row">
+          <input type="url" placeholder="Cole o link da faixa certa" data-pend-input="${idx}">
+          <button class="btn" data-pend-link="${idx}" type="button">Usar link</button>
+        </div>
+        <div class="row pend-actions">
+          <a href="https://open.spotify.com/search/${q}" target="_blank" rel="noopener">Buscar no Spotify ↗</a>
+          <button class="btn ghost" data-pend-skip="${idx}" type="button">Ignorar</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function resolvePending(idx, track) {
+    const p = pending[idx];
+    const n = Deck.addMany([Deck.fromListItem(p.item, track)]);
+    if (!n) return toast('Essa faixa já está no baralho.');
+    pending.splice(idx, 1);
+    savePending(); renderPending(); renderTable();
+    toast('Carta criada: ' + p.item.title);
+  }
+  $('#list-pending').addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.pendAccept != null) {
+      const c = pending[+b.dataset.pendAccept].cand;
+      resolvePending(+b.dataset.pendAccept, { id: c.id, album: { name: c.album, release_date: c.date } });
+    } else if (b.dataset.pendLink != null) {
+      const idx = +b.dataset.pendLink;
+      const id = Scanner.parsePayload($(`[data-pend-input="${idx}"]`).value);
+      if (!id) return toast('Cole um link de faixa (open.spotify.com/track/…).');
+      let t = { id };
+      try { t = await Spotify.track(id); } catch { /* sem o álbum, tudo bem */ }
+      resolvePending(idx, t);
+    } else if (b.dataset.pendSkip != null) {
+      pending.splice(+b.dataset.pendSkip, 1);
+      savePending(); renderPending();
+    }
+  });
+  renderPending();
+
   async function runMB(onlyFlagged) {
     const el = $('#mb-msg');
     $('#btn-mb-stop').hidden = false;

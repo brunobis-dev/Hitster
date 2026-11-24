@@ -75,7 +75,21 @@
 
     <section class="card-box">
       <h2>1. Adicionar músicas</h2>
-      <label class="lbl">Link de uma playlist sua no Spotify</label>
+
+      <div class="list-import">
+        <label class="lbl"><b>Importar lista</b> — CSV com as colunas <code>ano</code>, <code>artista</code> e <code>musica</code></label>
+        <p class="hint">O app procura cada música no Spotify e cria as cartas com o <b>ano, artista e nome da sua lista</b>.
+          As que não forem encontradas aparecem abaixo para você corrigir.</p>
+        <div class="row wrap">
+          <label class="btn primary file-btn">📋 Escolher lista (.csv)<input id="in-list" type="file" accept=".csv,text/csv"></label>
+          <button class="btn ghost" id="btn-list-stop" hidden>Parar</button>
+        </div>
+        <div class="progress" id="list-progress" hidden><i></i></div>
+        <p id="list-msg" class="msg"></p>
+        <div id="list-pending"></div>
+      </div>
+
+      <label class="lbl">…ou o link de uma playlist sua no Spotify</label>
       <div class="row">
         <input id="in-playlist" type="url" placeholder="https://open.spotify.com/playlist/…">
         <button class="btn" id="btn-import-pl">Importar</button>
