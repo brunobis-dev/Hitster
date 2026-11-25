@@ -37,6 +37,7 @@ Os scripts são carregados em ordem no fim do `index.html` (vendor → spotify �
 | `hnt.clientId` | Client ID do app no painel do Spotify (32 hex) |
 | `hnt.token` | `{access_token, refresh_token, expires_at}` |
 | `hnt.pkceVerifier`, `hnt.pkceState` | temporários durante o login |
+| `hnt.debugLog` | últimas 40 linhas do registro de reprodução (Configurações › Diagnóstico) |
 | `hnt.lastDevice` | `{id, name, type}` do último aparelho onde o jogo tocou (salvo a cada play que dá certo) |
 | `hnt.randomStart`, `hnt.vibrate` | `'1'`/`'0'` |
 | `hnt.excerptPos` | início do trecho (fração 0–0,74 da faixa) ou `'random'`; só vale com `hnt.randomStart = '1'` (modo Trecho) |
@@ -53,7 +54,7 @@ Conteúdo: `HNT1:<id da faixa no Spotify, 22 caracteres>` — de propósito NÃO
 2. `GET /me/player/devices` → `pickDevice()`: ativo > último aparelho usado (`hnt.lastDevice`) > tipo Smartphone. **Nunca** cai sozinho numa caixa de som/TV/PC parado: no iPhone o Spotify "adormece" em segundo plano e some da lista, e antes o app tocava numa Alexa. Sem candidato → aviso com "Abrir Spotify" e botões "Tocar em …" para os outros aparelhos. Ao abrir o scanner a música anterior NÃO é pausada (pausado em segundo plano, o iOS suspende o Spotify).
 3. Sem dispositivo → modal "Abra o Spotify" (deep link `spotify:`) e espera o app voltar a ficar visível.
 4. Opcional: início aleatório (`GET /tracks/{id}` para duração).
-5. `PUT /me/player/play?device_id=…` com `{uris:[…], position_ms}` + `PUT /me/player/repeat?state=off`.
+5. Se o aparelho não está ativo: `PUT /me/player` (transfer, `play:false`) e espera 0,5 s. Depois `PUT /me/player/play?device_id=…` com `{uris:[…], position_ms}` + `PUT /me/player/repeat?state=track` (a faixa repete até a próxima carta, para o iOS não "adormecer" o Spotify). 2 s depois, `GET /me/player` confere onde está tocando (vai para o registro; avisa se foi para outro aparelho).
 6. Erros: 404 → dispositivo dormiu; 403 → não é Premium ou o e-mail não está em User Management; 401 → força refresh do token.
 
 ## Regras do Spotify (mudaram em fev/2026 — confirme na doc se algo falhar)

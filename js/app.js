@@ -106,11 +106,22 @@
   const lastDevice = () => { try { return JSON.parse(localStorage.getItem(LAST_DEV)); } catch { return null; } };
   const rememberDevice = (d) => localStorage.setItem(LAST_DEV, JSON.stringify({ id: d.id, name: d.name, type: d.type }));
 
+  // ---------- registro de diagnóstico (Configurações › Diagnóstico) ----------
+  const LOG_KEY = 'hnt.debugLog';
+  const readLog = () => { try { return JSON.parse(localStorage.getItem(LOG_KEY)) || []; } catch { return []; } };
+  function dlog(text) {
+    const l = readLog();
+    l.push(new Date().toLocaleTimeString('pt-BR') + '  ' + text);
+    localStorage.setItem(LOG_KEY, JSON.stringify(l.slice(-40)));
+  }
+  const devStr = (d) => `${d.name} [${d.type}${d.is_active ? ', ativo' : ''}${d.is_restricted ? ', RESTRITO' : ''}]`;
+
   // Escolha automática: o aparelho ativo no Spotify > o último usado > um celular.
   // NUNCA escolhe sozinho uma caixa de som / TV / PC parado: no iPhone, o Spotify "adormece" em
   // segundo plano e some da lista; antes o app caía no primeiro da lista (uma Alexa, por exemplo).
   function pickDevice(list) {
     const last = lastDevice();
+    list = list.filter((d) => !d.is_restricted); // "restritos" não aceitam comandos da API
     return list.find((d) => d.is_active)
       || (last && list.find((d) => d.id === last.id))
       || list.find((d) => d.type === 'Smartphone')
@@ -148,6 +159,8 @@
       try {
         list = await Spotify.devices();
         let dev = (chosen && list.find((d) => d.id === chosen.id)) || pickDevice(list);
+        dlog('aparelhos: ' + (list.map(devStr).join(' · ') || 'nenhum'));
+        dlog('escolhido: ' + (dev ? devStr(dev) : 'nenhum → aviso'));
         if (!dev) {
           const r = await noDeviceDialog(list);
           if (r === 'cancel') return resetGame();
@@ -174,12 +187,22 @@
           } catch { start = 0; }
         }
         game.startMs = start;
+        // Aparelho na lista mas parado: primeiro "passa" a reprodução para ele, depois dá play.
+        // Sem isso, o Spotify às vezes aceita o play e não toca nada no iPhone.
+        if (!dev.is_active) {
+          try { await Spotify.transfer(dev.id, false); dlog('transferido para ' + dev.name); await wait(500); }
+          catch (err) { dlog(`transferir falhou: ${err.status || ''} ${err.reason || ''} ${err.message}`); }
+        }
         await Spotify.play(id, dev.id, start);
+        dlog('play enviado para ' + dev.name);
         rememberDevice(dev);
-        Spotify.repeatOff(dev.id);
+        // Repete a faixa até a próxima carta: com o Spotify sempre tocando, o iPhone não o "adormece".
+        Spotify.repeat('track', dev.id);
         setPlaying(true);
+        checkPlayback(id, dev);
         return;
       } catch (e) {
+        dlog(`erro: ${e.status || ''} ${e.reason || ''} ${e.message}`);
         if (e.code === 'NO_LOGIN') { resetGame(); return modal(e.message); }
         if (e.status === 404) { // dispositivo dormiu / não está ativo
           chosen = null;
@@ -198,6 +221,20 @@
       }
     }
     resetGame();
+  }
+
+  /** Confere, 2 s depois do play, onde a música está tocando de verdade (vai para o registro). */
+  async function checkPlayback(id, dev) {
+    await wait(2000);
+    try {
+      const st = await Spotify.state();
+      if (!st || !st.device) { dlog('conferência: nenhum aparelho tocando'); return; }
+      const where = st.device.id === dev.id ? 'no aparelho certo' : `em OUTRO aparelho (${st.device.name})`;
+      const what = st.item && st.item.id === id ? 'faixa certa' : 'outra faixa';
+      dlog(`conferência: ${st.is_playing ? 'tocando' : 'PARADO'} ${where}, ${what}`);
+      if (st.device.id !== dev.id) toast(`A música foi para ${st.device.name}.`);
+      else if (!st.is_playing) toast('O Spotify recebeu a música, mas não começou a tocar.');
+    } catch (e) { dlog('conferência falhou: ' + e.message); }
   }
 
   const waitForReturn = () => new Promise((res) => {
@@ -600,6 +637,37 @@
       refreshDeviceChip();
     }
   }
+  async function renderDiag() {
+    const out = $('#diag-out');
+    out.textContent = 'Consultando o Spotify…';
+    const lines = [];
+    try {
+      const list = await Spotify.devices();
+      lines.push('APARELHOS QUE O SPOTIFY VÊ AGORA:');
+      lines.push(...(list.length ? list.map((d) => '• ' + devStr(d)) : ['(nenhum — abra o Spotify em algum aparelho)']));
+      const pick = pickDevice(list);
+      lines.push('O app tocaria em: ' + (pick ? pick.name : 'nenhum (mostraria o aviso)'));
+      const st = await Spotify.state();
+      lines.push('Player: ' + (st && st.device ? `${st.is_playing ? 'tocando' : 'parado'} em ${st.device.name}` : 'nenhum aparelho ativo'));
+    } catch (e) { lines.push(`Erro ao consultar o Spotify: ${e.status || ''} ${e.message}`); }
+    const last = lastDevice();
+    lines.push('Último aparelho usado: ' + (last ? `${last.name} [${last.type}]` : 'nenhum'));
+    lines.push('', 'REGISTRO (mais recente embaixo):', ...(readLog().length ? readLog() : ['(vazio — escaneie uma carta e volte aqui)']));
+    out.textContent = lines.join('\n');
+  }
+  $('#row-diag').onclick = () => {
+    const panel = $('#diag-panel');
+    panel.hidden = !panel.hidden;
+    $('#row-diag').setAttribute('aria-expanded', String(!panel.hidden));
+    if (!panel.hidden) renderDiag();
+  };
+  $('#btn-diag-refresh').onclick = renderDiag;
+  $('#btn-diag-clear').onclick = () => { localStorage.removeItem(LOG_KEY); renderDiag(); };
+  $('#btn-diag-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('#diag-out').textContent); toast('Copiado!'); }
+    catch { toast('Não consegui copiar — tire um print.'); }
+  };
+
   function setSpotifyPanel(open) {
     $('#spotify-panel').hidden = !open;
     $('#row-spotify').setAttribute('aria-expanded', String(open));

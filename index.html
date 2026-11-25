@@ -228,6 +228,24 @@
       </label>
     </div>
 
+    <h3 class="group-lbl">Diagnóstico</h3>
+    <div class="group">
+      <button class="g-row" id="row-diag" type="button" aria-expanded="false">
+        <span>
+          <span class="g-main">Spotify: aparelhos e registro</span>
+          <span class="g-desc">Se a música não tocar onde deveria, abra aqui e tire um print.</span>
+        </span>
+        <span class="chev" aria-hidden="true"></span>
+      </button>
+      <div class="g-panel" id="diag-panel" hidden>
+        <pre id="diag-out" class="diag"></pre>
+        <div class="row wrap">
+          <button class="btn" id="btn-diag-refresh" type="button">Atualizar</button>
+          <button class="btn ghost" id="btn-diag-copy" type="button">Copiar</button>
+          <button class="btn ghost" id="btn-diag-clear" type="button">Limpar registro</button>
+        </div>
+      </div>
+    </div>
 
     <p class="hint center foot">MS.Song · feito pelo Bruno</p>
   </main>

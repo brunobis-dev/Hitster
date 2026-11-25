@@ -146,7 +146,11 @@ const Spotify = (() => {
   const pause = (deviceId) => api('/me/player/pause', { method: 'PUT', query: { device_id: deviceId || null } });
   const seek = (ms, deviceId) => api('/me/player/seek', { method: 'PUT', query: { position_ms: Math.max(0, Math.floor(ms)), device_id: deviceId || null } });
   const state = () => api('/me/player');
-  const repeatOff = (deviceId) => api('/me/player/repeat', { method: 'PUT', query: { state: 'off', device_id: deviceId || null } }).catch(() => {});
+  const repeatOff = (deviceId) => repeat('off', deviceId);
+  /** state: 'track' (repete a faixa), 'context' ou 'off'. Erros são ignorados (não é essencial). */
+  const repeat = (state, deviceId) => api('/me/player/repeat', { method: 'PUT', query: { state, device_id: deviceId || null } }).catch(() => {});
+  /** Passa a reprodução para o aparelho (vira o "ativo"). Ajuda quando ele está na lista mas parado. */
+  const transfer = (deviceId, playNow = false) => api('/me/player', { method: 'PUT', body: { device_ids: [deviceId], play: playNow } });
 
   // ---------- Catálogo ----------
   const me = () => api('/me');
@@ -184,6 +188,6 @@ const Spotify = (() => {
 
   return {
     redirectUri, getClientId, setClientId, login, handleRedirect, isLoggedIn, logout,
-    devices, play, resume, pause, seek, state, repeatOff, me, track, search, playlistTracks,
+    devices, play, resume, pause, seek, state, repeatOff, repeat, transfer, me, track, search, playlistTracks,
   };
 })();

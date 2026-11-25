@@ -441,3 +441,12 @@ td .alb { color: #7c71aa; font-size: 12px; }
 .bw .front .qr { border: .3mm solid #000; }
 .bw .front .brand { color: #000; }
 .bw .back { background: #fff !important; color: #000; }
+
+/* ---------- diagnóstico ---------- */
+.diag {
+  margin: 14px 0 0; padding: 12px; max-height: 55vh; overflow: auto;
+  background: rgba(0, 0, 0, .35); border: 1px solid rgba(255, 255, 255, .08); border-radius: 10px;
+  font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: rgba(255, 255, 255, .85);
+  white-space: pre-wrap; word-break: break-word;
+}
+#row-diag[aria-expanded="true"] .chev { transform: rotate(225deg); }
